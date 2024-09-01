@@ -661,8 +661,7 @@ private:
 	void draw_minimap();
 
 public:
-
-	virtual const time_of_day& get_time_of_day(const map_location& loc = map_location::null_location()) const;
+	virtual const time_of_day& get_time_of_day(const map_location& loc = map_location::null_location()) const = 0;
 
 	virtual bool has_time_area() const {return false;}
 
@@ -686,8 +685,6 @@ public:
 	}
 
 private:
-	void init_flags_for_side_internal(std::size_t side, const std::string& side_color);
-
 	int blindfold_ctr_;
 
 protected:
@@ -721,6 +718,8 @@ protected:
 	 */
 	virtual void draw_hex(const map_location& loc);
 
+	void draw_overlays_at(const map_location& loc);
+
 	enum TERRAIN_TYPE { BACKGROUND, FOREGROUND};
 
 	void get_terrain_images(const map_location &loc,
@@ -732,8 +731,6 @@ protected:
 	void scroll_to_xy(int screenxpos, int screenypos, SCROLL_TYPE scroll_type,bool force = true);
 
 	static void fill_images_list(const std::string& prefix, std::vector<std::string>& images);
-
-	static const std::string& get_variant(const std::vector<std::string>& variants, const map_location &loc);
 
 	std::size_t currentTeam_;
 	bool dont_show_all_; //const team *viewpoint_;
@@ -964,10 +961,8 @@ private:
 	/** Currently set debug flags. */
 	std::bitset<__NUM_DEBUG_FLAGS> debug_flags_;
 
-	typedef std::list<arrow*> arrows_list_t;
-	typedef std::map<map_location, arrows_list_t > arrows_map_t;
 	/** Maps the list of arrows for each location */
-	arrows_map_t arrows_map_;
+	std::map<map_location, std::list<arrow*>> arrows_map_;
 
 	tod_color color_adjust_;
 

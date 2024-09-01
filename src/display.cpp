@@ -257,42 +257,28 @@ void display::set_theme(const std::string& new_theme)
 	queue_rerender();
 }
 
-void display::init_flags() {
-
+void display::init_flags()
+{
 	flags_.clear();
 	if (!dc_) return;
 	flags_.resize(dc_->teams().size());
 
-	std::vector<std::string> side_colors;
-	side_colors.reserve(dc_->teams().size());
-
 	for(const team& t : dc_->teams()) {
-		std::string side_color = t.color();
-		side_colors.push_back(side_color);
-		init_flags_for_side_internal(t.side() - 1, side_color);
+		reinit_flags_for_team(t);
 	}
 }
 
 void display::reinit_flags_for_team(const team& t)
 {
-	init_flags_for_side_internal(t.side() - 1, t.color());
-}
-
-void display::init_flags_for_side_internal(std::size_t n, const std::string& side_color)
-{
-	assert(dc_ != nullptr);
-	assert(n < dc_->teams().size());
-	assert(n < flags_.size());
-
-	std::string flag = dc_->teams()[n].flag();
+	std::string flag = t.flag();
 	std::string old_rgb = game_config::flag_rgb;
-	std::string new_rgb = side_color;
+	std::string new_rgb = t.color();
 
 	if(flag.empty()) {
 		flag = game_config::images::flag;
 	}
 
-	LOG_DP << "Adding flag for team " << n << " from animation " << flag;
+	LOG_DP << "Adding flag for side " << t.side() << " from animation " << flag;
 
 	// Must recolor flag image
 	animated<image::locator> temp_anim;
@@ -309,7 +295,7 @@ void display::init_flags_for_side_internal(std::size_t n, const std::string& sid
 			try {
 				time = std::max<int>(1, std::stoi(sub_items.back()));
 			} catch(const std::invalid_argument&) {
-				ERR_DP << "Invalid time value found when constructing flag for side " << n << ": " << sub_items.back();
+				ERR_DP << "Invalid time value found when constructing flag for side " << t.side() << ": " << sub_items.back();
 			}
 		}
 
@@ -319,31 +305,28 @@ void display::init_flags_for_side_internal(std::size_t n, const std::string& sid
 		temp_anim.add_frame(time, flag_image);
 	}
 
-	animated<image::locator>& f = flags_[n];
+	animated<image::locator>& f = flags_[t.side() - 1];
 	f = temp_anim;
 	auto time = f.get_end_time();
 	if (time > 0) {
 		f.start_animation(randomness::rng::default_instance().get_random_int(0, time-1), true);
-	}
-	else {
+	} else {
 		// this can happen if both flag and game_config::images::flag are empty.
-		ERR_DP << "missing flag for team" << n;
+		ERR_DP << "missing flag for side " << t.side();
 	}
 }
 
 texture display::get_flag(const map_location& loc)
 {
-	if(!get_map().is_village(loc)) {
-		return texture();
-	}
-
-	for (const team& t : dc_->teams()) {
-		if (t.owns_village(loc) && (!fogged(loc) || !dc_->get_team(viewing_side()).is_enemy(t.side())))
-		{
+	for(const team& t : dc_->teams()) {
+		if(t.owns_village(loc) && (!fogged(loc) || !dc_->get_team(viewing_side()).is_enemy(t.side()))) {
 			auto& flag = flags_[t.side() - 1];
 			flag.update_last_draw_time();
-			const image::locator &image_flag = animate_map_ ?
-				flag.get_current_frame() : flag.get_first_frame();
+
+			const image::locator& image_flag = animate_map_
+				? flag.get_current_frame()
+				: flag.get_first_frame();
+
 			return image::get_texture(image_flag, image::TOD_COLORED);
 		}
 	}
@@ -397,12 +380,6 @@ std::string display::remove_exclusive_draw(const map_location& loc)
 	return id;
 }
 
-const time_of_day & display::get_time_of_day(const map_location& /*loc*/) const
-{
-	static time_of_day tod;
-	return tod;
-}
-
 void display::update_tod(const time_of_day* tod_override)
 {
 	const time_of_day* tod = tod_override;
@@ -442,12 +419,6 @@ void display::fill_images_list(const std::string& prefix, std::vector<std::strin
 	}
 	if (images.empty())
 		images.emplace_back();
-}
-
-const std::string& display::get_variant(const std::vector<std::string>& variants, const map_location &loc)
-{
-	//TODO use better noise function
-	return variants[std::abs(loc.x + loc.y) % variants.size()];
 }
 
 void display::rebuild_all()
@@ -926,13 +897,13 @@ void display::create_buttons()
 		action_work.push_back(std::move(b));
 	}
 
+	menu_buttons_ = std::move(menu_work);
+	action_buttons_ = std::move(action_work);
+
 	if (prevent_draw_) {
 		// buttons start hidden in this case
 		hide_buttons();
 	}
-
-	menu_buttons_ = std::move(menu_work);
-	action_buttons_ = std::move(action_work);
 
 	layout_buttons();
 	DBG_DP << "buttons created";
@@ -2703,70 +2674,22 @@ void display::draw_hex(const map_location& loc)
 			drawing_buffer_add(drawing_layer::grid_bottom, loc,
 				[tex = image::get_texture(grid_bottom, image::TOD_COLORED)](const rect& dest) { draw::blit(tex, dest); });
 		}
-	}
 
-	if(!is_shrouded) {
-		auto it = get_overlays().find(loc);
-		if(it != get_overlays().end()) {
-			std::vector<overlay>& overlays = it->second;
-			if(overlays.size() != 0) {
-				tod_color tod_col = tod.color + color_adjust_;
-				image::light_string lt = image::get_light_string(-1, tod_col.r, tod_col.g, tod_col.b);
+		// overlays (TODO: can we just draw all the overlays in one pass instead of per-hex?)
+		draw_overlays_at(loc);
 
-				for(const overlay& ov : overlays) {
-					bool item_visible_for_team = true;
-					if(dont_show_all_ && !ov.team_name.empty()) {
-						// dont_show_all_ imples that viewing_team() is a valid index to get_teams()
-						const std::string& current_team_name = get_teams()[viewing_team()].team_name();
-						const std::vector<std::string>& current_team_names = utils::split(current_team_name);
-						const std::vector<std::string>& team_names = utils::split(ov.team_name);
-
-						item_visible_for_team = std::find_first_of(team_names.begin(), team_names.end(),
-							current_team_names.begin(), current_team_names.end()) != team_names.end();
-					}
-
-					if(item_visible_for_team && !(fogged(loc) && !ov.visible_in_fog)) {
-						point isize = image::get_size(ov.image, image::HEXED);
-						std::string ipf = ov.image;
-
-						texture tex = ov.image.find("~NO_TOD_SHIFT()") == std::string::npos
-							? image::get_lighted_texture(ipf, lt)
-							: image::get_texture(ipf, image::HEXED);
-
-						drawing_buffer_add(drawing_layer::terrain_bg, loc, [=](const rect& dest) mutable {
-							// Adjust submerge appropriately
-							const t_translation::terrain_code terrain = get_map().get_terrain(loc);
-							const terrain_type& terrain_info = get_map().get_terrain_info(terrain);
-							const double submerge = terrain_info.unit_submerge();
-
-							submerge_data data = get_submerge_data(dest, submerge, isize, ALPHA_OPAQUE, false, false);
-							if(submerge > 0.0) {
-								// set clip for dry part
-								// smooth_shaded doesn't use the clip information so it's fine to set it up front
-								tex.set_src(data.unsub_src);
-
-								// draw underwater part
-								draw::smooth_shaded(tex, data.alpha_verts);
-							}
-							// draw dry part
-							draw::blit(tex, submerge > 0.0 ? data.unsub_dest : dest);
-						});
-					}
-				}
-			}
+		// village-control flags.
+		if(get_map().is_village(loc)) {
+			drawing_buffer_add(drawing_layer::terrain_bg, loc,
+				[tex = get_flag(loc)](const rect& dest) { draw::blit(tex, dest); });
 		}
-	}
-
-	// village-control flags.
-	if(!is_shrouded) {
-		drawing_buffer_add(drawing_layer::terrain_bg, loc, [tex = get_flag(loc)](const rect& dest) { draw::blit(tex, dest); });
 	}
 
 	// Draw the time-of-day mask on top of the terrain in the hex.
 	// tod may differ from tod if hex is illuminated.
 	const std::string& tod_hex_mask = tod.image_mask;
 	if(tod_hex_mask1 || tod_hex_mask2) {
-		drawing_buffer_add(drawing_layer::terrain_fg, loc, [=](const rect& dest) mutable {
+		drawing_buffer_add(drawing_layer::terrain_fg, loc, [this](const rect& dest) mutable {
 			tod_hex_mask1.set_alpha_mod(tod_hex_alpha1);
 			draw::blit(tod_hex_mask1, dest);
 
@@ -2779,26 +2702,30 @@ void display::draw_hex(const map_location& loc)
 	}
 
 	// Paint arrows
-	arrows_map_t::const_iterator arrows_in_hex = arrows_map_.find(loc);
-	if(arrows_in_hex != arrows_map_.end()) {
-		for (arrow* const a : arrows_in_hex->second) {
-			a->draw_hex(loc);
+	if(auto arrows_in_hex = arrows_map_.find(loc); arrows_in_hex != arrows_map_.end()) {
+		std::vector<texture> to_draw;
+		for(const arrow* a : arrows_in_hex->second) {
+			to_draw.push_back(image::get_texture(a->get_image_for_loc(loc)));
 		}
+
+		drawing_buffer_add(drawing_layer::arrows, loc, [to_draw = std::move(to_draw)](const rect& dest) {
+			for(const texture& t : to_draw) {
+				draw::blit(t, dest);
+			}
+		});
 	}
 
 	// Apply shroud, fog and linger overlay
 
-	if(is_shrouded) {
-		// We apply void also on off-map tiles to shroud the half-hexes too
+	if(is_shrouded || fogged(loc)) {
+		// TODO: better noise function
+		const auto get_variant = [&loc](const std::vector<std::string>& variants) -> const auto& {
+			return variants[std::abs(loc.x + loc.y) % variants.size()];
+		};
+
+		const std::string& img = get_variant(is_shrouded ? shroud_images_ : fog_images_);
 		drawing_buffer_add(drawing_layer::fog_shroud, loc,
-			[tex = image::get_texture(get_variant(shroud_images_, loc), image::TOD_COLORED)](const rect& dest) {
-				draw::blit(tex, dest);
-			});
-	} else if(fogged(loc)) {
-		drawing_buffer_add(drawing_layer::fog_shroud, loc,
-			[tex = image::get_texture(get_variant(fog_images_, loc), image::TOD_COLORED)](const rect& dest) {
-				draw::blit(tex, dest);
-			});
+			[tex = image::get_texture(img, image::TOD_COLORED)](const rect& dest) { draw::blit(tex, dest); });
 	}
 
 	if(!is_shrouded) {
@@ -2810,10 +2737,9 @@ void display::draw_hex(const map_location& loc)
 	}
 
 	if(debug_flag_set(DEBUG_FOREGROUND)) {
+		using namespace std::string_literals;
 		drawing_buffer_add(drawing_layer::unit_default, loc,
-			[tex = image::get_texture(image::locator{"terrain/foreground.png"}, image::TOD_COLORED)](const rect& dest) {
-				draw::blit(tex, dest);
-			});
+			[tex = image::get_texture("terrain/foreground.png"s)](const rect& dest) { draw::blit(tex, dest); });
 	}
 
 	if(on_map) {
@@ -2873,6 +2799,76 @@ void display::draw_hex(const map_location& loc)
 			draw::fill(bg_dest, {0, 0, 0, 0xaa});
 			draw::blit(tex, text_dest);
 		});
+	}
+}
+
+void display::draw_overlays_at(const map_location& loc)
+{
+	auto it = get_overlays().find(loc);
+	if(it == get_overlays().end()) {
+		return;
+	}
+
+	std::vector<overlay>& overlays = it->second;
+	if(overlays.empty()) {
+		return;
+	}
+
+	const time_of_day& tod = get_time_of_day(loc);
+	tod_color tod_col = tod.color + color_adjust_;
+
+	image::light_string lt = image::get_light_string(-1, tod_col.r, tod_col.g, tod_col.b);
+
+	for(const overlay& ov : overlays) {
+		if(fogged(loc) && !ov.visible_in_fog) {
+			continue;
+		}
+
+		if(dont_show_all_ && !ov.team_name.empty()) {
+			// dont_show_all_ imples that viewing_team() is a valid index to get_teams()
+			const std::string& current_team_name = get_teams()[viewing_team()].team_name();
+			const std::vector<std::string>& current_team_names = utils::split(current_team_name);
+			const std::vector<std::string>& team_names = utils::split(ov.team_name);
+
+			bool item_visible_for_team = std::find_first_of(team_names.begin(), team_names.end(),
+				current_team_names.begin(), current_team_names.end()) != team_names.end();
+
+			if(!item_visible_for_team) {
+				continue;
+			}
+		}
+
+		texture tex = ov.image.find("~NO_TOD_SHIFT()") == std::string::npos
+			? image::get_lighted_texture(ov.image, lt)
+			: image::get_texture(ov.image, image::HEXED);
+
+		// Base submerge value for the terrain at this location
+		const double ter_sub = get_map().get_terrain_info(loc).unit_submerge();
+
+		drawing_buffer_add(
+			drawing_layer::terrain_bg, loc, [this, tex, ter_sub, ovr_sub = ov.submerge](const rect& dest) mutable {
+				if(ovr_sub > 0.0) {
+					// Adjust submerge appropriately
+					double submerge = ter_sub * ovr_sub;
+
+					submerge_data data
+						= this->get_submerge_data(dest, submerge, tex.draw_size(), ALPHA_OPAQUE, false, false);
+
+					// set clip for dry part
+					// smooth_shaded doesn't use the clip information so it's fine to set it up front
+					// TODO: do we need to unset this?
+					tex.set_src(data.unsub_src);
+
+					// draw underwater part
+					draw::smooth_shaded(tex, data.alpha_verts);
+
+					// draw dry part
+					draw::blit(tex, data.unsub_dest);
+				} else {
+					// draw whole texture
+					draw::blit(tex, dest);
+				}
+			});
 	}
 }
 

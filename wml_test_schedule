@@ -377,6 +377,8 @@
 0 damage_type_test
 0 damage_type_with_filter_test
 0 damage_secondary_type_test
+9 damage_type_apply_to_both_filter_self_opponent
+9 damage_type_apply_to_attacker_filter_attacker_defender
 9 event_test_filter_damage_type_recursion
 9 four_cycle_recursion_branching
 9 four_cycle_recursion_by_id
@@ -925,6 +927,12 @@
 0 drains_overwrite_specials_two_both_sides
 0 drains_overwrite_specials_two_one_side
 0 drains_overwrite_specials_mixed
+# firststrike tests
+0 firststrike_ability
+0 firststrike_affect_allies
+0 firststrike_affect_self_no
+0 firststrike_affect_enemies
+0 firststrike_affect_everybody
 # Warnings about WML
 0 unknown_scenario_false_positives
 0 unknown_scenario_interpolated
