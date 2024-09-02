@@ -1507,7 +1507,7 @@ std::set<map_location> mouse_handler::get_adj_enemies(const map_location& loc, i
 void mouse_handler::show_attack_options(const unit_map::const_iterator& u)
 {
 	// Cannot attack if no attacks are left.
-	if(u->attacks_left() == 0) {
+	if(u->attacks_left() == 0 || u->attacks().empty()) {
 		return;
 	}
 
