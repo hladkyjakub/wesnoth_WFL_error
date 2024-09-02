@@ -1549,7 +1549,7 @@ void mouse_handler::show_attack_options(const unit_map::const_iterator& u)
 			int z = cz + dz;
 			int x = a.x + dx;
 			// convert back to offset
-			tiles.emplace_back(x, z + floor(x / 2.0);
+			tiles.emplace_back(x, z + floor(x / 2.0));
 		}
 	}
 	// tiles are tiles in range n, unchecked if existing
