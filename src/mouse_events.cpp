@@ -1510,7 +1510,7 @@ void mouse_handler::show_attack_options(const unit_map::const_iterator& u)
 	if(u->attacks_left() == 0 || u->attacks().empty()) {
 		return;
 	}
-	
+
 	// Get the teams involved.
 	const team& cur_team = current_team();
 	const team& u_team = pc_.get_teams()[u->side() - 1];
