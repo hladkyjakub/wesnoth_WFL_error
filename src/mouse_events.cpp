@@ -1510,7 +1510,7 @@ void mouse_handler::show_attack_options(const unit_map::const_iterator& u)
 	if(u->attacks_left() == 0 || u->attacks().empty()) {
 		return;
 	}
-
+	
 	// Get the teams involved.
 	const team& cur_team = current_team();
 	const team& u_team = pc_.get_teams()[u->side() - 1];
@@ -1537,7 +1537,7 @@ void mouse_handler::show_attack_options(const unit_map::const_iterator& u)
 	int n = *std::prev(attackable_distances.end());
 	const map_location& a = u->get_location();
 
-	int cz = a.y - (a.x - (a.x&1)) / 2;
+	int cz = a.y - floor(a.x / 2.0);
 	std::vector<map_location> tiles;
 	// enumerate range
 	for (int dx = -n; dx <= n; ++dx) {
@@ -1549,7 +1549,7 @@ void mouse_handler::show_attack_options(const unit_map::const_iterator& u)
 			int z = cz + dz;
 			int x = a.x + dx;
 			// convert back to offset
-			tiles.emplace_back(x, z + (x - (x&1)) / 2);
+			tiles.emplace_back(x, z + floor(x / 2.0);
 		}
 	}
 	// tiles are tiles in range n, unchecked if existing
