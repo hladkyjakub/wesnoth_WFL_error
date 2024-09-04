@@ -1530,7 +1530,7 @@ void mouse_handler::show_attack_options(const unit_map::const_iterator& u)
             attackable_distances.insert(i);
         }
     }
-
+	assert(!attackable_distances.empty());
 	// for optimalization, I think iterating over ranges here, would be better
 
 	int min = *attackable_distances.begin();
